@@ -1,5 +1,6 @@
 package com.pharmacy.model.dto.purchase;
 
+import com.pharmacy.common.PageRequest;
 import java.io.Serializable;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
