@@ -1,0 +1,36 @@
+# 编译输出
+target/
+*.class
+
+# IDE 配置
+.idea/
+*.iml
+.settings/
+.project
+.classpath
+.vscode/
+
+# 日志
+*.log
+
+# 系统文件
+.DS_Store
+Thumbs.db
+
+# ========== 需要团队成员自己实现的代码 ==========
+# 排除所有 ServiceImpl 实现类
+**/impl/*.java
+
+# 排除所有 Controller
+**/controller/*.java
+
+# 排除所有 Mapper XML 文件
+**/mapper/*.xml
+
+# 排除测试代码
+**/test/**/*.java
+
+# ========== 保留模板文件（反排除） ==========
+# 如果你想提交模板文件供成员参考，可以这样命名并取消注释
+# !**/impl/*Template.java
+# !**/controller/*Template.java
