@@ -79,16 +79,18 @@ public class PurchaseOrderServiceImpl implements PurchaseOrderService {
      * @return 订单 ID
      */
     @Override
-    @Transactional(rollbackFor = Exception.class)
+    @Transactional(rollbackFor = Exception.class)//事务回滚
     public Long createOrder(PurchaseOrderCreateRequest request) {
+        // 参数校验
         ThrowUtils.throwIf(request == null, ErrorCode.PARAMS_ERROR, "请求参数不能为空");
         ThrowUtils.throwIf(request.getSupplierId() == null, ErrorCode.PARAMS_ERROR, "请选择供应商");
         ThrowUtils.throwIf(request.getItems() == null || request.getItems().isEmpty(), ErrorCode.PARAMS_ERROR, "请添加采购商品");
-
+        //通过供应商ID查询供应商信息
         Supplier supplier = supplierMapper.selectById(request.getSupplierId());
+        //校验
         ThrowUtils.throwIf(supplier == null, ErrorCode.NOT_FOUND_ERROR, "供应商不存在");
         ThrowUtils.throwIf(Objects.equals(supplier.getIsBlacklisted(), 1), ErrorCode.OPERATION_ERROR, "黑名单供应商不能创建采购单");
-
+        //创建采购订单，赋值默认值
         PurchaseOrder order = new PurchaseOrder();
         String orderNo = "PO" + System.currentTimeMillis();
         order.setOrderNo(orderNo);
@@ -96,20 +98,21 @@ public class PurchaseOrderServiceImpl implements PurchaseOrderService {
         order.setOrderStatus("待审核");
         order.setTotalCount(0);
         order.setTotalAmount(BigDecimal.ZERO);
-
+        //插入
         purchaseOrderMapper.insert(order);
 
-        BigDecimal totalAmount = BigDecimal.ZERO;
-        int totalCount = 0;
-
+        BigDecimal totalAmount = BigDecimal.ZERO;//采购金额
+        int totalCount = 0;//采购数量
+        //遍历采购商品
         for (PurchaseOrderCreateRequest.PurchaseOrderItemRequest itemRequest : request.getItems()) {
+            //参数校验
             ThrowUtils.throwIf(itemRequest.getMedicineId() == null, ErrorCode.PARAMS_ERROR, "药品 ID 不能为空");
             ThrowUtils.throwIf(itemRequest.getQuantity() == null || itemRequest.getQuantity() <= 0, ErrorCode.PARAMS_ERROR, "采购数量必须大于 0");
             ThrowUtils.throwIf(itemRequest.getPurchasePrice() == null || itemRequest.getPurchasePrice().signum() < 0, ErrorCode.PARAMS_ERROR, "采购单价不合法");
-
+            //通过药品ID查询药品信息
             Medicine medicine = medicineMapper.selectById(itemRequest.getMedicineId());
             ThrowUtils.throwIf(medicine == null, ErrorCode.NOT_FOUND_ERROR, "药品不存在");
-
+            //创建采购商品，赋值
             PurchaseOrderItem item = new PurchaseOrderItem();
             item.setPurchaseOrderId(order.getId());
             item.setMedicineId(itemRequest.getMedicineId());
@@ -117,13 +120,13 @@ public class PurchaseOrderServiceImpl implements PurchaseOrderService {
             item.setQuantity(itemRequest.getQuantity());
             item.setPurchasePrice(itemRequest.getPurchasePrice());
             item.setLineAmount(itemRequest.getPurchasePrice().multiply(BigDecimal.valueOf(itemRequest.getQuantity())));
-
+            //插入
             purchaseOrderItemMapper.insert(item);
-
+            //累加
             totalAmount = totalAmount.add(item.getLineAmount());
             totalCount += itemRequest.getQuantity();
         }
-
+        //更新
         order.setTotalAmount(totalAmount);
         order.setTotalCount(totalCount);
         purchaseOrderMapper.updateById(order);
@@ -139,31 +142,32 @@ public class PurchaseOrderServiceImpl implements PurchaseOrderService {
      */
     @Override
     public Page<PurchaseOrderVO> listOrders(PurchaseOrderQueryRequest request) {
+        //设置默认值
         long current = request == null ? 1 : request.getCurrent();
         long pageSize = request == null ? 10 : request.getPageSize();
+        //查询
+        Page<PurchaseOrder> orderPage = new Page<>(current, pageSize);//分页
+        QueryWrapper<PurchaseOrder> queryWrapper = buildQueryWrapper(request);//构建查询条件
 
-        Page<PurchaseOrder> orderPage = new Page<>(current, pageSize);
-        QueryWrapper<PurchaseOrder> queryWrapper = buildQueryWrapper(request);
-
-        Page<PurchaseOrder> pageResult = purchaseOrderMapper.selectPage(orderPage, queryWrapper);
-
-        List<Long> orderIds = pageResult.getRecords().stream().map(PurchaseOrder::getId).collect(Collectors.toList());
-        List<Long> supplierIds = pageResult.getRecords().stream().map(PurchaseOrder::getSupplierId).distinct().collect(Collectors.toList());
-
+        Page<PurchaseOrder> pageResult = purchaseOrderMapper.selectPage(orderPage, queryWrapper);//分页查询
+        //构造结果
+        List<Long> orderIds = pageResult.getRecords().stream().map(PurchaseOrder::getId).collect(Collectors.toList());//获取订单ID
+        List<Long> supplierIds = pageResult.getRecords().stream().map(PurchaseOrder::getSupplierId).distinct().collect(Collectors.toList());//获取供应商ID
+        //批量查询供应商信息
         Map<Long, String> supplierMap = supplierIds.isEmpty() ? Map.of()
                 : supplierMapper.selectBatchIds(supplierIds).stream()
                 .collect(Collectors.toMap(Supplier::getId, Supplier::getSupplierName));
-
+        //批量查询采购商品
         Map<Long, List<PurchaseOrderItem>> itemMap = orderIds.isEmpty() ? Map.of()
                 : purchaseOrderItemMapper.selectList(new QueryWrapper<PurchaseOrderItem>().in("purchaseOrderId", orderIds))
                 .stream().collect(Collectors.groupingBy(PurchaseOrderItem::getPurchaseOrderId));
-
+        //构造结果
         List<PurchaseOrderVO> voList = pageResult.getRecords().stream().map(order -> {
             List<PurchaseOrderItemVO> itemVOS = itemMap.getOrDefault(order.getId(), List.of()).stream()
                     .map(item -> new PurchaseOrderItemVO(item.getId(), item.getMedicineId(), item.getMedicineName(),
                             item.getQuantity(), item.getPurchasePrice(), item.getLineAmount()))
                     .collect(Collectors.toList());
-
+            //返回采购订单
             return new PurchaseOrderVO(
                     order.getId(),
                     order.getOrderNo(),
@@ -180,9 +184,9 @@ public class PurchaseOrderServiceImpl implements PurchaseOrderService {
                     itemVOS
             );
         }).collect(Collectors.toList());
-
-        Page<PurchaseOrderVO> result = new Page<>(current, pageSize, pageResult.getTotal());
-        result.setRecords(voList);
+        //返回
+        Page<PurchaseOrderVO> result = new Page<>(current, pageSize, pageResult.getTotal());//创建分页结果
+        result.setRecords(voList);//设置结果
         return result;
     }
 
